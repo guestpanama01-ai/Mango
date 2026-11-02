@@ -19,7 +19,7 @@ import assistant.tools.files  # noqa: F401
 import assistant.tools.shell  # noqa: F401
 import assistant.tools.web    # noqa: F401
 import assistant.tools.memory_tool  # noqa: F401
-
+import assistant.tools.utils
 
 SYSTEM_PROMPT = """Eres un asistente personal en CLI. Respondes en español, de forma concisa y directa.
 

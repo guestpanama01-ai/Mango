@@ -71,5 +71,5 @@ if __name__ == "__main__":
     uvicorn.run(app, host="127.0.0.1", port=8000)
     import assistant.tools.files  # noqa: F401
 import assistant.tools.shell  # noqa: F401
-import assistant.tools.web    # noqa: F401
-import assistant.tools.memory_tool  # <--- AÑADE ESTA LÍNEA
+import assistant.tools.web    # noqa: F401  # <--- AÑADE ESTA LÍNEA
+import assistant.tools.utils
