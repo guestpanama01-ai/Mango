@@ -11,18 +11,16 @@
         <header class="app-header">
             <div class="logo-area">
                 <div class="avatar">AI</div>
-                <h1>Asistente Personal</h1>
+                <h1>Mango</h1>
             </div>
             
             <div class="header-controls">
-                <!-- Selector de modelo -->
                 <select id="model-selector" class="model-selector">
                     <option value="groq">Groq (Rápido)</option>
                     <option value="claude">Claude (Inteligente)</option>
                     <option value="gemini">Gemini (Google)</option>
                 </select>
 
-                <!-- Botón de nueva conversación -->
                 <button id="new-chat-btn" class="new-chat-btn" title="Nueva conversación">
                     <svg viewBox="0 0 24 24" width="18" height="18" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round">
                         <line x1="12" y1="5" x2="12" y2="19"></line>
@@ -38,7 +36,6 @@
         </header>
 
         <main class="chat-container" id="chat-container">
-            <!-- Los mensajes se cargan dinámicamente desde app.js -->
         </main>
 
         <footer class="input-area">
@@ -56,8 +53,6 @@
             </div>
         </footer>
     </div>
-    
-    <!-- Cargamos app.js -->
     <script src="app.js"></script>
 </body>
 </html>

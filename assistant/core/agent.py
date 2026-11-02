@@ -13,9 +13,19 @@ from assistant.core.memory import (
 from assistant.core.router import call_llm
 from assistant.tools import registry
 
+# Importamos todas las herramientas al inicio para que se registren
+# antes de que el agente empiece a trabajar.
+import assistant.tools.files  # noqa: F401
+import assistant.tools.shell  # noqa: F401
+import assistant.tools.web    # noqa: F401
+import assistant.tools.memory_tool  # noqa: F401
+
+
 SYSTEM_PROMPT = """Eres un asistente personal en CLI. Respondes en español, de forma concisa y directa.
 
 Tienes acceso a herramientas (tools). Úsalas cuando necesites información del sistema, archivos, web o ejecutar comandos.
+
+Tienes herramientas de memoria. Si el usuario te pide que recuerdes algo (como su nombre, sus gustos o datos importantes), usa la herramienta 'remember_fact'. Para consultar lo que ya sabes sobre el usuario, usa 'list_facts'.
 
 Reglas:
 - No inventes datos. Si no sabes algo y una tool puede ayudarte, úsala.
@@ -118,24 +128,11 @@ def get_agent() -> Agent:
 
 
 if __name__ == "__main__":
+    # Bloque de pruebas por si ejecutas `python -m assistant.core.agent`
     agent = Agent()
-
-    # Registra las tools reales
-    import assistant.tools.files  # noqa: F401
-    import assistant.tools.shell  # noqa: F401
-    import assistant.tools.web    # noqa: F401
-
     print("Tools registradas:", registry.tool_names())
     print()
-
-    # Test 1: conversación simple (sin tools)
-    print("=== Test 1: saludo ===")
+    print("=== Test: saludo ===")
     print(agent.run("Hola, ¿quién eres?"))
     print()
-
-    # Test 2: uso de tool (listar archivos)
-    print("=== Test 2: listar archivos ===")
-    print(agent.run("¿Qué archivos hay en el workspace?"))
-    print()
-
     print("OK agent")

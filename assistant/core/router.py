@@ -92,13 +92,18 @@ def _call_groq(model: str, messages: list[dict], tools: list[dict]) -> dict:
     from groq import Groq
 
     client = Groq(api_key=get_api_key("groq"))
-    resp = client.chat.completions.create(
-        model=model,
-        messages=messages,
-        tools=_tools_openai(tools) if tools else None,
-        tool_choice="auto" if tools else "none",
-        max_tokens=2048,
-    )
+    
+    # Si no hay tools, no enviamos el parámetro 'tools' ni 'tool_choice'
+    kwargs = {
+        "model": model,
+        "messages": messages,
+        "max_tokens": 2048,
+    }
+    if tools:
+        kwargs["tools"] = _tools_openai(tools)
+        kwargs["tool_choice"] = "auto"
+
+    resp = client.chat.completions.create(**kwargs)
 
     choice = resp.choices[0]
     msg = choice.message
