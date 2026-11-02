@@ -1,0 +1,7 @@
+anthropic
+groq
+google-generativeai
+pydantic
+python-dotenv
+rich
+ddgs
