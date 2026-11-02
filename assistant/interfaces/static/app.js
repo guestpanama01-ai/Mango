@@ -1,4 +1,4 @@
-// Configurar marked para usar highlight.js
+// Configurar marked
 if (typeof marked !== 'undefined') {
     marked.setOptions({
         breaks: true,
@@ -16,6 +16,50 @@ const sendBtn = document.getElementById('send-btn');
 const statusIndicator = document.getElementById('status-indicator');
 const newChatBtn = document.getElementById('new-chat-btn');
 const modelSelector = document.getElementById('model-selector');
+const themeToggle = document.getElementById('theme-toggle');
+const uploadBtn = document.getElementById('upload-btn');
+const fileInput = document.getElementById('file-input');
+const hljsTheme = document.getElementById('hljs-theme');
+
+// --- Lógica del Tema ---
+themeToggle.addEventListener('click', () => {
+    document.body.classList.toggle('light-theme');
+    if (document.body.classList.contains('light-theme')) {
+        hljsTheme.href = 'https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github.min.css';
+    } else {
+        hljsTheme.href = 'https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github-dark.min.css';
+    }
+});
+
+// --- Lógica de Subir Archivo ---
+uploadBtn.addEventListener('click', () => fileInput.click());
+
+fileInput.addEventListener('change', async () => {
+    if (!fileInput.files.length) return;
+    const file = fileInput.files[0];
+    
+    const formData = new FormData();
+    formData.append('file', file);
+    
+    addMessage('user', `Subiendo archivo: ${file.name}...`);
+    
+    try {
+        const res = await fetch('/upload', {
+            method: 'POST',
+            body: formData
+        });
+        const data = await res.json();
+        
+        if (res.ok) {
+            addMessage('assistant', `He guardado el archivo **${data.filename}** en el workspace. ¿Qué quieres que haga con él?`, true);
+        } else {
+            addMessage('assistant', 'Error al subir el archivo.');
+        }
+    } catch (e) {
+        addMessage('assistant', 'Error de conexión al subir el archivo.');
+    }
+    fileInput.value = ''; // Limpiar
+});
 
 // --- 1. Cargar historial al iniciar ---
 async function loadHistory() {
@@ -23,12 +67,10 @@ async function loadHistory() {
         const res = await fetch('/history');
         const data = await res.json();
         chatContainer.innerHTML = '';
-        
         if (data.messages.length === 0) {
             addMessage('assistant', '¡Hola! Soy tu asistente. ¿En qué puedo ayudarte hoy?', true);
             return;
         }
-
         data.messages.forEach(msg => {
             if (msg.content.startsWith('[TOOL')) return;
             addMessage(msg.role, msg.content, (msg.role === 'assistant'));
@@ -112,19 +154,13 @@ function addMessage(role, text, isMarkdown = false) {
     
     if (isMarkdown && typeof marked !== 'undefined') {
         contentDiv.innerHTML = marked.parse(text);
-        
-        // Añadir botón de copiar a los bloques de código
         const preBlocks = contentDiv.querySelectorAll('pre');
         preBlocks.forEach(pre => {
             const code = pre.querySelector('code');
             if (!code) return;
-            
-            // Crear botón
             const copyBtn = document.createElement('button');
             copyBtn.className = 'copy-code-btn';
             copyBtn.innerHTML = 'Copiar';
-            
-            // Lógica de copiar
             copyBtn.addEventListener('click', () => {
                 navigator.clipboard.writeText(code.innerText).then(() => {
                     copyBtn.innerHTML = '¡Copiado!';
@@ -135,12 +171,9 @@ function addMessage(role, text, isMarkdown = false) {
                     }, 2000);
                 });
             });
-            
-            // Insertar botón dentro del <pre>
             pre.style.position = 'relative';
             pre.appendChild(copyBtn);
         });
-
     } else {
         contentDiv.textContent = text;
     }

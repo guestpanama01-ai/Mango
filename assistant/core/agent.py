@@ -20,6 +20,7 @@ import assistant.tools.shell  # noqa: F401
 import assistant.tools.web    # noqa: F401
 import assistant.tools.memory_tool  # noqa: F401
 import assistant.tools.utils
+import assistant.tools.tasks  # noqa: F401
 
 SYSTEM_PROMPT = """Eres un asistente personal en CLI. Respondes en español, de forma concisa y directa.
 
@@ -31,9 +32,9 @@ Reglas:
 - No inventes datos. Si no sabes algo y una tool puede ayudarte, úsala.
 - Para operaciones con archivos, usa siempre paths relativos al workspace.
 - Si una tool devuelve error, explica el problema brevemente en vez de reintentar a ciegas.
-- Cuando termines, da una respuesta final en texto (sin llamar más tools)."""
-
-
+- Cuando termines, da una respuesta final en texto (sin llamar más tools).
+Tienes herramientas para gestionar recordatorios. Si el usuario te pide que le recuerdes algo, usa 'add_task'. Si te pregunta qué tiene pendiente, usa 'list_tasks'.
+"""
 class Agent:
     """Agente con memoria, tools y loop de razonamiento."""
 
