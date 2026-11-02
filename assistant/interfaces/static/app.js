@@ -28,37 +28,27 @@ let isListening = false;
 let ttsEnabled = false;
 let recognition = null;
 
-// Configurar Reconocimiento de Voz (STT)
 if ('webkitSpeechRecognition' in window || 'SpeechRecognition' in window) {
     const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
     recognition = new SpeechRecognition();
-    recognition.lang = 'es-ES'; // Español
+    recognition.lang = 'es-ES';
     recognition.continuous = false;
     recognition.interimResults = false;
 
     recognition.onstart = () => {
         isListening = true;
-        micBtn.style.color = '#f87171'; // Rojo mientras escucha
+        micBtn.style.color = '#f87171';
         micBtn.style.background = 'rgba(248, 113, 113, 0.2)';
     };
-
     recognition.onresult = (event) => {
         const transcript = event.results[0][0].transcript;
         chatInput.value = transcript;
-        // Enviar automáticamente después de hablar
         setTimeout(() => chatForm.requestSubmit(), 300);
     };
-
-    recognition.onerror = (event) => {
-        console.error('Error de reconocimiento:', event.error);
-        resetMicBtn();
-    };
-
-    recognition.onend = () => {
-        resetMicBtn();
-    };
+    recognition.onerror = (event) => { resetMicBtn(); };
+    recognition.onend = () => { resetMicBtn(); };
 } else {
-    micBtn.style.display = 'none'; // Ocultar si el navegador no soporta
+    micBtn.style.display = 'none';
 }
 
 function resetMicBtn() {
@@ -69,35 +59,25 @@ function resetMicBtn() {
 
 micBtn.addEventListener('click', () => {
     if (!recognition) return;
-    if (isListening) {
-        recognition.stop();
-    } else {
-        try {
-            recognition.start();
-        } catch (e) {
-            console.error(e);
-        }
-    }
+    if (isListening) recognition.stop();
+    else { try { recognition.start(); } catch (e) { console.error(e); } }
 });
 
-// Configurar Síntesis de Voz (TTS)
 ttsToggle.addEventListener('click', () => {
     ttsEnabled = !ttsEnabled;
     if (ttsEnabled) {
-        ttsToggle.style.color = '#34d399'; // Verde si está activo
+        ttsToggle.style.color = '#34d399';
         ttsToggle.style.background = 'rgba(52, 211, 153, 0.2)';
     } else {
         ttsToggle.style.color = '';
         ttsToggle.style.background = '';
-        window.speechSynthesis.cancel(); // Detener si estaba hablando
+        window.speechSynthesis.cancel();
     }
 });
 
 function speakText(text) {
     if (!ttsEnabled) return;
-    window.speechSynthesis.cancel(); // Cortar lo anterior
-    
-    // Limpiar el texto de Markdown para que no lea los asteriscos
+    window.speechSynthesis.cancel();
     const cleanText = text.replace(/[*#_`~]/g, '').replace(/\[.*?\]\(.*?\)/g, '');
     const utterance = new SpeechSynthesisUtterance(cleanText);
     utterance.lang = 'es-ES';
@@ -176,17 +156,44 @@ chatForm.addEventListener('submit', async (e) => {
     setStatus('thinking');
 
     try {
-        const response = await fetch('/chat', {
+        const response = await fetch('/chat/stream', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ message: message, model: modelSelector.value })
         });
+
         if (!response.ok) throw new Error(`Error: ${response.status}`);
-        const data = await response.json();
+
         removeTypingIndicator(typingId);
-        addMessage('assistant', data.reply, true);
-        speakText(data.reply); // <--- LEER EN VOZ ALTA
+        
+        const msgDiv = document.createElement('div');
+        msgDiv.className = 'msg assistant';
+        const avatarDiv = document.createElement('div');
+        avatarDiv.className = 'msg-avatar';
+        avatarDiv.textContent = 'AI';
+        const contentDiv = document.createElement('div');
+        contentDiv.className = 'msg-content';
+        msgDiv.appendChild(avatarDiv);
+        msgDiv.appendChild(contentDiv);
+        chatContainer.appendChild(msgDiv);
+        
+        const reader = response.body.getReader();
+        const decoder = new TextDecoder("utf-8");
+        let fullText = "";
+
+        while (true) {
+            const { done, value } = await reader.read();
+            if (done) break;
+            
+            const chunk = decoder.decode(value, { stream: true });
+            fullText += chunk;
+            contentDiv.innerHTML = marked.parse(fullText);
+            scrollToBottom();
+        }
+
+        speakText(fullText);
         setStatus('connected');
+
     } catch (error) {
         removeTypingIndicator(typingId);
         addMessage('assistant', `⚠️ Error de conexión.`);
@@ -270,17 +277,21 @@ function scrollToBottom() {
 
 function setStatus(state) {
     if (!statusIndicator) return;
-    statusIndicator.classList.remove('thinking', 'error', 'busy');
+    const dot = statusIndicator.querySelector('.dot');
+    const text = statusIndicator.childNodes[statusIndicator.childNodes.length - 1];
     if (state === 'thinking') {
         statusIndicator.innerHTML = '<span class="dot"></span> Pensando...';
-        statusIndicator.classList.add('thinking');
+        if (dot) dot.style.background = '#fbbf24';
     } else if (state === 'error') {
-        statusIndicator.innerHTML = '<span class="dot"></span> Desconectado';
-        statusIndicator.classList.add('error');
+        statusIndicator.innerHTML = '<span class="dot"></span> Error';
+        if (dot) dot.style.background = '#f87171';
     } else {
         statusIndicator.innerHTML = '<span class="dot"></span> Conectado';
     }
 }
 
-// Arrancar
-loadHistory();
+// --- Inicialización ---
+document.addEventListener('DOMContentLoaded', () => {
+    loadHistory();
+    setStatus('connected');
+});

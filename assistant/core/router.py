@@ -92,8 +92,6 @@ def _call_groq(model: str, messages: list[dict], tools: list[dict]) -> dict:
     from groq import Groq
 
     client = Groq(api_key=get_api_key("groq"))
-    
-    # Si no hay tools, no enviamos el parámetro 'tools' ni 'tool_choice'
     kwargs = {
         "model": model,
         "messages": messages,
@@ -136,7 +134,6 @@ def _call_gemini(model: str, messages: list[dict], tools: list[dict]) -> dict:
     import google.generativeai as genai
 
     genai.configure(api_key=get_api_key("gemini"))
-
     system_text = ""
     contents: list[dict] = []
     for m in messages:
@@ -147,13 +144,11 @@ def _call_gemini(model: str, messages: list[dict], tools: list[dict]) -> dict:
             contents.append({"role": role, "parts": [{"text": m["content"]}]})
 
     gemini_tools = [{"function_declarations": _tools_gemini(tools)}] if tools else None
-
     gen_model = genai.GenerativeModel(
         model_name=model,
         system_instruction=system_text or None,
         tools=gemini_tools,
     )
-
     resp = gen_model.generate_content(contents)
 
     text_parts: list[str] = []
@@ -198,17 +193,7 @@ def call_llm(
     tools: Optional[list[dict]] = None,
     task_type: str = "chat",
 ) -> dict:
-    """
-    Llama al LLM con fallback entre proveedores.
-
-    Args:
-        messages: lista de {"role": "system|user|assistant", "content": str}
-        tools: schemas de tools (formato Anthropic)
-        task_type: "chat", "code", "reasoning", etc.
-
-    Returns:
-        dict con text, tool_calls, stop_reason, tokens_in, tokens_out, provider, model
-    """
+    """Llama al LLM con fallback entre proveedores."""
     tools = tools or []
 
     if task_type in {"code", "reasoning", "long"}:
@@ -218,9 +203,7 @@ def call_llm(
 
     available = [a for a in order if get_api_key(a)]
     if not available:
-        raise RuntimeError(
-            "No hay ningún proveedor con API key. Configura .env."
-        )
+        raise RuntimeError("No hay ningún proveedor con API key. Configura .env.")
 
     last_error: Optional[Exception] = None
     for alias in available:
@@ -234,28 +217,32 @@ def call_llm(
             last_error = e
             continue
 
-    raise RuntimeError(
-        f"Todos los proveedores fallaron. Último error: "
-        f"{type(last_error).__name__}: {last_error}"
+    raise RuntimeError(f"Todos los proveedores fallaron. Último error: {type(last_error).__name__}: {last_error}")
+
+
+def stream_llm(messages: list[dict], task_type: str = "chat"):
+    """Generador que produce la respuesta del LLM en tiempo real (solo Groq)."""
+    from groq import Groq
+
+    alias = "groq"
+    if not get_api_key(alias):
+        raise RuntimeError("Groq no está configurado. El streaming requiere una API Key de Groq.")
+
+    model = MODELS[alias]["model"]
+    client = Groq(api_key=get_api_key(alias))
+
+    stream = client.chat.completions.create(
+        model=model,
+        messages=messages,
+        max_tokens=2048,
+        stream=True,
     )
+
+    for chunk in stream:
+        if chunk.choices[0].delta.content:
+            yield chunk.choices[0].delta.content
 
 
 def get_llm_choice(task_type: str = "chat") -> tuple[str, str]:
     """Devuelve (alias, model) que se usaría para un task_type dado."""
     return get_model(task_type)
-
-
-if __name__ == "__main__":
-    print("Probando call_llm con task_type='chat'...")
-    try:
-        resp = call_llm(
-            messages=[{"role": "user", "content": "Responde solo: OK"}],
-            task_type="chat",
-        )
-        print(f"Provider: {resp['provider']}")
-        print(f"Model: {resp['model']}")
-        print(f"Text: {resp['text']}")
-        print(f"Tokens: in={resp['tokens_in']} out={resp['tokens_out']}")
-        print("OK router")
-    except Exception as e:
-        print(f"ERROR: {type(e).__name__}: {e}")
