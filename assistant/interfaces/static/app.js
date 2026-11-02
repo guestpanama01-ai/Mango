@@ -20,6 +20,90 @@ const themeToggle = document.getElementById('theme-toggle');
 const uploadBtn = document.getElementById('upload-btn');
 const fileInput = document.getElementById('file-input');
 const hljsTheme = document.getElementById('hljs-theme');
+const micBtn = document.getElementById('mic-btn');
+const ttsToggle = document.getElementById('tts-toggle');
+
+// --- Variables de Voz ---
+let isListening = false;
+let ttsEnabled = false;
+let recognition = null;
+
+// Configurar Reconocimiento de Voz (STT)
+if ('webkitSpeechRecognition' in window || 'SpeechRecognition' in window) {
+    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+    recognition = new SpeechRecognition();
+    recognition.lang = 'es-ES'; // Español
+    recognition.continuous = false;
+    recognition.interimResults = false;
+
+    recognition.onstart = () => {
+        isListening = true;
+        micBtn.style.color = '#f87171'; // Rojo mientras escucha
+        micBtn.style.background = 'rgba(248, 113, 113, 0.2)';
+    };
+
+    recognition.onresult = (event) => {
+        const transcript = event.results[0][0].transcript;
+        chatInput.value = transcript;
+        // Enviar automáticamente después de hablar
+        setTimeout(() => chatForm.requestSubmit(), 300);
+    };
+
+    recognition.onerror = (event) => {
+        console.error('Error de reconocimiento:', event.error);
+        resetMicBtn();
+    };
+
+    recognition.onend = () => {
+        resetMicBtn();
+    };
+} else {
+    micBtn.style.display = 'none'; // Ocultar si el navegador no soporta
+}
+
+function resetMicBtn() {
+    isListening = false;
+    micBtn.style.color = '';
+    micBtn.style.background = '';
+}
+
+micBtn.addEventListener('click', () => {
+    if (!recognition) return;
+    if (isListening) {
+        recognition.stop();
+    } else {
+        try {
+            recognition.start();
+        } catch (e) {
+            console.error(e);
+        }
+    }
+});
+
+// Configurar Síntesis de Voz (TTS)
+ttsToggle.addEventListener('click', () => {
+    ttsEnabled = !ttsEnabled;
+    if (ttsEnabled) {
+        ttsToggle.style.color = '#34d399'; // Verde si está activo
+        ttsToggle.style.background = 'rgba(52, 211, 153, 0.2)';
+    } else {
+        ttsToggle.style.color = '';
+        ttsToggle.style.background = '';
+        window.speechSynthesis.cancel(); // Detener si estaba hablando
+    }
+});
+
+function speakText(text) {
+    if (!ttsEnabled) return;
+    window.speechSynthesis.cancel(); // Cortar lo anterior
+    
+    // Limpiar el texto de Markdown para que no lea los asteriscos
+    const cleanText = text.replace(/[*#_`~]/g, '').replace(/\[.*?\]\(.*?\)/g, '');
+    const utterance = new SpeechSynthesisUtterance(cleanText);
+    utterance.lang = 'es-ES';
+    utterance.rate = 1.0;
+    window.speechSynthesis.speak(utterance);
+}
 
 // --- Lógica del Tema ---
 themeToggle.addEventListener('click', () => {
@@ -33,35 +117,24 @@ themeToggle.addEventListener('click', () => {
 
 // --- Lógica de Subir Archivo ---
 uploadBtn.addEventListener('click', () => fileInput.click());
-
 fileInput.addEventListener('change', async () => {
     if (!fileInput.files.length) return;
     const file = fileInput.files[0];
-    
     const formData = new FormData();
     formData.append('file', file);
-    
     addMessage('user', `Subiendo archivo: ${file.name}...`);
-    
     try {
-        const res = await fetch('/upload', {
-            method: 'POST',
-            body: formData
-        });
+        const res = await fetch('/upload', { method: 'POST', body: formData });
         const data = await res.json();
-        
-        if (res.ok) {
-            addMessage('assistant', `He guardado el archivo **${data.filename}** en el workspace. ¿Qué quieres que haga con él?`, true);
-        } else {
-            addMessage('assistant', 'Error al subir el archivo.');
-        }
+        if (res.ok) addMessage('assistant', `He guardado el archivo **${data.filename}** en el workspace. ¿Qué quieres que haga con él?`, true);
+        else addMessage('assistant', 'Error al subir el archivo.');
     } catch (e) {
         addMessage('assistant', 'Error de conexión al subir el archivo.');
     }
-    fileInput.value = ''; // Limpiar
+    fileInput.value = '';
 });
 
-// --- 1. Cargar historial al iniciar ---
+// --- Historial, Enter y Envío ---
 async function loadHistory() {
     try {
         const res = await fetch('/history');
@@ -75,18 +148,14 @@ async function loadHistory() {
             if (msg.content.startsWith('[TOOL')) return;
             addMessage(msg.role, msg.content, (msg.role === 'assistant'));
         });
-    } catch (e) {
-        console.error("No se pudo cargar el historial", e);
-    }
+    } catch (e) { console.error(e); }
 }
 
-// --- 2. Autoajustar el textarea ---
 chatInput.addEventListener('input', () => {
     chatInput.style.height = 'auto';
     chatInput.style.height = Math.min(chatInput.scrollHeight, 160) + 'px';
 });
 
-// --- 3. Manejar Enter ---
 chatInput.addEventListener('keydown', (e) => {
     if (e.key === 'Enter' && !e.shiftKey) {
         e.preventDefault();
@@ -94,7 +163,6 @@ chatInput.addEventListener('keydown', (e) => {
     }
 });
 
-// --- 4. Enviar mensaje ---
 chatForm.addEventListener('submit', async (e) => {
     e.preventDefault();
     const message = chatInput.value.trim();
@@ -113,14 +181,12 @@ chatForm.addEventListener('submit', async (e) => {
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ message: message, model: modelSelector.value })
         });
-
         if (!response.ok) throw new Error(`Error: ${response.status}`);
-
         const data = await response.json();
         removeTypingIndicator(typingId);
         addMessage('assistant', data.reply, true);
+        speakText(data.reply); // <--- LEER EN VOZ ALTA
         setStatus('connected');
-
     } catch (error) {
         removeTypingIndicator(typingId);
         addMessage('assistant', `⚠️ Error de conexión.`);
@@ -128,27 +194,22 @@ chatForm.addEventListener('submit', async (e) => {
     }
 });
 
-// --- 5. Botón de Nueva Conversación ---
 newChatBtn.addEventListener('click', async () => {
     if (!confirm('¿Borrar todo el historial y empezar de cero?')) return;
     try {
         await fetch('/clear', { method: 'POST' });
         chatContainer.innerHTML = '';
         addMessage('assistant', '¡Historial borrado! ¿De qué quieres hablar ahora?', true);
-    } catch (e) {
-        console.error(e);
-    }
+    } catch (e) { console.error(e); }
 });
 
-// --- 6. Función para añadir mensajes ---
+// --- Funciones de UI ---
 function addMessage(role, text, isMarkdown = false) {
     const msgDiv = document.createElement('div');
     msgDiv.className = `msg ${role}`;
-
     const avatarDiv = document.createElement('div');
     avatarDiv.className = 'msg-avatar';
     avatarDiv.textContent = role === 'user' ? 'Tú' : 'AI';
-
     const contentDiv = document.createElement('div');
     contentDiv.className = 'msg-content';
     
@@ -165,10 +226,7 @@ function addMessage(role, text, isMarkdown = false) {
                 navigator.clipboard.writeText(code.innerText).then(() => {
                     copyBtn.innerHTML = '¡Copiado!';
                     copyBtn.classList.add('copied');
-                    setTimeout(() => {
-                        copyBtn.innerHTML = 'Copiar';
-                        copyBtn.classList.remove('copied');
-                    }, 2000);
+                    setTimeout(() => { copyBtn.innerHTML = 'Copiar'; copyBtn.classList.remove('copied'); }, 2000);
                 });
             });
             pre.style.position = 'relative';
@@ -177,14 +235,12 @@ function addMessage(role, text, isMarkdown = false) {
     } else {
         contentDiv.textContent = text;
     }
-
     msgDiv.appendChild(avatarDiv);
     msgDiv.appendChild(contentDiv);
     chatContainer.appendChild(msgDiv);
     scrollToBottom();
 }
 
-// --- Auxiliares ---
 function showTypingIndicator() {
     const id = 'typing-' + Date.now();
     const msgDiv = document.createElement('div');
