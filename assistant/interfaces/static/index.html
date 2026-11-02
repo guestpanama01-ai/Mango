@@ -5,13 +5,16 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Asistente IA Personal</title>
     <link rel="stylesheet" href="style.css">
+    
+    <!-- Estilos de resaltado de código (Tema oscuro) -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github-dark.min.css">
 </head>
 <body>
     <div class="app-wrapper">
         <header class="app-header">
             <div class="logo-area">
                 <div class="avatar">AI</div>
-                <h1>Mango</h1>
+                <h1>Asistente Personal</h1>
             </div>
             
             <div class="header-controls">
@@ -53,6 +56,11 @@
             </div>
         </footer>
     </div>
+
+    <!-- Cargamos marked.js (Markdown) y highlight.js (Colores de código) -->
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
+    
     <script src="app.js"></script>
 </body>
 </html>

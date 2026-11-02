@@ -689,7 +689,42 @@ body::after {
 #chat-input {
     background: transparent !important;
 }
+/* --- Mejoras para los bloques de código --- */
+.msg-content pre {
+    background: #0d1117 !important; /* Fondo oscuro tipo GitHub */
+    border: 1px solid #30363d !important;
+    border-radius: 8px;
+    padding: 12px;
+    margin: 10px 0;
+    overflow-x: auto;
+    position: relative; /* Para posicionar el botón */
+}
 
+.copy-code-btn {
+    position: absolute;
+    top: 8px;
+    right: 8px;
+    background: rgba(255, 255, 255, 0.1);
+    color: #c9d1d9;
+    border: 1px solid rgba(255, 255, 255, 0.2);
+    border-radius: 6px;
+    padding: 4px 8px;
+    font-size: 0.75rem;
+    cursor: pointer;
+    transition: all 0.2s;
+    backdrop-filter: blur(4px);
+}
+
+.copy-code-btn:hover {
+    background: rgba(255, 255, 255, 0.2);
+    color: #fff;
+}
+
+.copy-code-btn.copied {
+    background: #238636;
+    color: #fff;
+    border-color: #2ea043;
+}
 
 
 

@@ -1,14 +1,13 @@
-// Cargar marked.js dinámicamente para evitar errores
-(function loadMarked() {
-    if (typeof marked === 'undefined') {
-        const script = document.createElement('script');
-        script.src = "https://cdn.jsdelivr.net/npm/marked/marked.min.js";
-        script.onload = () => { if (typeof marked !== 'undefined') marked.setOptions({ breaks: true }); };
-        document.head.appendChild(script);
-    } else {
-        marked.setOptions({ breaks: true });
-    }
-})();
+// Configurar marked para usar highlight.js
+if (typeof marked !== 'undefined') {
+    marked.setOptions({
+        breaks: true,
+        highlight: function (code, lang) {
+            const language = hljs.getLanguage(lang) ? lang : 'plaintext';
+            return hljs.highlight(code, { language }).value;
+        }
+    });
+}
 
 const chatForm = document.getElementById('chat-form');
 const chatInput = document.getElementById('chat-input');
@@ -113,6 +112,35 @@ function addMessage(role, text, isMarkdown = false) {
     
     if (isMarkdown && typeof marked !== 'undefined') {
         contentDiv.innerHTML = marked.parse(text);
+        
+        // Añadir botón de copiar a los bloques de código
+        const preBlocks = contentDiv.querySelectorAll('pre');
+        preBlocks.forEach(pre => {
+            const code = pre.querySelector('code');
+            if (!code) return;
+            
+            // Crear botón
+            const copyBtn = document.createElement('button');
+            copyBtn.className = 'copy-code-btn';
+            copyBtn.innerHTML = 'Copiar';
+            
+            // Lógica de copiar
+            copyBtn.addEventListener('click', () => {
+                navigator.clipboard.writeText(code.innerText).then(() => {
+                    copyBtn.innerHTML = '¡Copiado!';
+                    copyBtn.classList.add('copied');
+                    setTimeout(() => {
+                        copyBtn.innerHTML = 'Copiar';
+                        copyBtn.classList.remove('copied');
+                    }, 2000);
+                });
+            });
+            
+            // Insertar botón dentro del <pre>
+            pre.style.position = 'relative';
+            pre.appendChild(copyBtn);
+        });
+
     } else {
         contentDiv.textContent = text;
     }
@@ -165,5 +193,5 @@ function setStatus(state) {
     }
 }
 
-// Iniciar
+// Arrancar
 loadHistory();
