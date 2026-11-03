@@ -201,13 +201,25 @@ chatForm.addEventListener('submit', async (e) => {
     }
 });
 
-newChatBtn.addEventListener('click', async () => {
-    if (!confirm('¿Borrar todo el historial y empezar de cero?')) return;
+// --- Botón de Nueva Conversación (CORREGIDO) ---
+newChatBtn.addEventListener('click', async (e) => {
+    e.preventDefault(); // Evita recargas accidentales
     try {
+        // Enviamos la petición al backend
         await fetch('/clear', { method: 'POST' });
+        
+        // Limpiamos la interfaz SIEMPRE, pase lo que pase
         chatContainer.innerHTML = '';
+        
+        // Mostramos el mensaje de bienvenida de nuevo
         addMessage('assistant', '¡Historial borrado! ¿De qué quieres hablar ahora?', true);
-    } catch (e) { console.error(e); }
+        
+    } catch (e) {
+        console.error("Error al borrar:", e);
+        // Si falla el backend, limpiamos igual para que no se quede colgado
+        chatContainer.innerHTML = '';
+        addMessage('assistant', '¡Interfaz reiniciada! (Hubo un problema al borrar la memoria en el servidor)', true);
+    }
 });
 
 // --- Funciones de UI ---
@@ -277,21 +289,17 @@ function scrollToBottom() {
 
 function setStatus(state) {
     if (!statusIndicator) return;
-    const dot = statusIndicator.querySelector('.dot');
-    const text = statusIndicator.childNodes[statusIndicator.childNodes.length - 1];
+    statusIndicator.classList.remove('thinking', 'error', 'busy');
     if (state === 'thinking') {
         statusIndicator.innerHTML = '<span class="dot"></span> Pensando...';
-        if (dot) dot.style.background = '#fbbf24';
+        statusIndicator.classList.add('thinking');
     } else if (state === 'error') {
-        statusIndicator.innerHTML = '<span class="dot"></span> Error';
-        if (dot) dot.style.background = '#f87171';
+        statusIndicator.innerHTML = '<span class="dot"></span> Desconectado';
+        statusIndicator.classList.add('error');
     } else {
         statusIndicator.innerHTML = '<span class="dot"></span> Conectado';
     }
 }
 
-// --- Inicialización ---
-document.addEventListener('DOMContentLoaded', () => {
-    loadHistory();
-    setStatus('connected');
-});
+// Arrancar
+loadHistory();
