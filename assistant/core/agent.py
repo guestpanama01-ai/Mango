@@ -5,11 +5,7 @@ from typing import Optional
 
 from assistant.config import MAX_ITERATIONS
 from assistant.core.memory import (
-    LongTermMemory,
-    ShortTermMemory,
-    TokenCounter,
-    build_context,
-    init_db,
+    LongTermMemory, ShortTermMemory, TokenCounter, build_context, init_db,
 )
 from assistant.core.router import call_llm, stream_llm
 from assistant.tools import registry
@@ -20,11 +16,11 @@ import assistant.tools.web    # noqa: F401
 import assistant.tools.memory_tool  # noqa: F401
 import assistant.tools.utils  # noqa: F401
 import assistant.tools.tasks  # noqa: F401
+import assistant.tools.obsidian  # noqa: F401
 
 SYSTEM_PROMPT = """Eres Mango, un asistente personal en CLI. Respondes en español, de forma concisa y directa.
 Tienes acceso a herramientas (tools). Úsalas cuando necesites información del sistema, archivos, web o ejecutar comandos.
-Tienes herramientas de memoria. Si el usuario te pide que recuerdes algo, usa 'remember_fact'. Para consultar, usa 'list_facts'.
-Tienes herramientas para gestionar recordatorios. Usa 'add_task' para recordar algo y 'list_tasks' para ver pendientes.
+Tienes herramientas de memoria y Obsidian. Si el usuario te pide recordar algo, usa 'remember_fact'. Si pide buscar en sus notas, usa 'obsidian_search'.
 Reglas:
 - No inventes datos. Si no sabes algo y una tool puede ayudarte, úsala.
 - Para operaciones con archivos, usa siempre paths relativos al workspace.
@@ -33,37 +29,28 @@ Reglas:
 
 class Agent:
     def __init__(self) -> None:
-        # Arreglo 1: Inicializar base de datos al instanciar el agente
         init_db()
-        
         self.stm = ShortTermMemory()
         self.ltm = LongTermMemory()
         self.tc = TokenCounter()
 
-    def _build_messages(self) -> list[dict]:
+    def _build_messages(self, query: str) -> list[dict]:
         history = self.stm.get_context(limit=20)
-        facts = self.ltm.all_facts()
+        facts = self.ltm.search_facts(query)
         return build_context(SYSTEM_PROMPT, facts, history)
 
     def _log_result(self, result: dict) -> None:
         total = result.get("tokens_in", 0) + result.get("tokens_out", 0)
         if total > 0:
-            self.tc.log(
-                provider=result.get("provider", "unknown"),
-                model=result.get("model", "unknown"),
-                tokens=total,
-            )
+            self.tc.log(provider=result.get("provider", "unknown"), model=result.get("model", "unknown"), tokens=total)
 
     def run(self, user_message: str) -> str:
         user_message = user_message.strip()
-        if not user_message:
-            return ""
+        if not user_message: return ""
 
         self.stm.add("user", user_message)
         schemas = registry.list_schemas()
-        
-        # Historial de mensajes en formato nativo
-        messages = self._build_messages()
+        messages = self._build_messages(user_message)
 
         for iteration in range(MAX_ITERATIONS):
             try:
@@ -75,23 +62,17 @@ class Agent:
             tool_calls = result.get("tool_calls", [])
             text = result.get("text", "")
 
-            # Si no hay tools, devolvemos texto final
             if not tool_calls:
                 self.stm.add("assistant", text or "(sin respuesta)")
                 return text or "(sin respuesta)"
 
-            # Hay tools: guardamos la decisión del asistente
             if text:
                 messages.append({"role": "assistant", "content": text})
                 self.stm.add("assistant", text)
             
-            # Ejecutamos cada tool y añadimos la respuesta en formato nativo
             for tc in tool_calls:
-                name = tc["name"]
-                args = tc["args"]
+                name, args = tc["name"], tc["args"]
                 tool_result = registry.execute(name, args)
-
-                # Formato nativo: el resultado va como un mensaje nuevo
                 tool_message = f"[RESULTADO DE {name}]\n{tool_result}"
                 messages.append({"role": "user", "content": tool_message})
                 self.stm.add("user", tool_message)
@@ -99,15 +80,41 @@ class Agent:
         return f"(límite de {MAX_ITERATIONS} iteraciones alcanzado)"
 
     def run_stream(self, user_message: str):
-        """Streaming rápido (sin tools para mantener fluidez visual)."""
+        """Streaming con soporte de herramientas."""
         user_message = user_message.strip()
         if not user_message:
             yield ""
             return
 
         self.stm.add("user", user_message)
-        messages = self._build_messages()
+        schemas = registry.list_schemas()
+        messages = self._build_messages(user_message)
         
+        # 1. Primera llamada rápida para ver si el modelo quiere usar una tool
+        try:
+            check_result = call_llm(messages, tools=schemas, task_type="chat")
+            self._log_result(check_result)
+            
+            if check_result.get("tool_calls"):
+                # Si hay tools, las ejecutamos y avisamos al frontend
+                for tc in check_result["tool_calls"]:
+                    name, args = tc["name"], tc["args"]
+                    yield f"\n*(Usando herramienta: {name}...)*\n"
+                    tool_result = registry.execute(name, args)
+                    
+                    tool_message = f"[RESULTADO DE {name}]\n{tool_result}"
+                    messages.append({"role": "user", "content": tool_message})
+                    self.stm.add("user", tool_message)
+                    
+                    # Después de ejecutar la tool, hacemos streaming de la respuesta final
+                    yield "\n"
+                    for chunk in stream_llm(messages):
+                        yield chunk
+                    return
+        except Exception:
+            pass # Si falla la verificación, pasamos al streaming directo
+
+        # 2. Si no hay tools (o falló), streaming directo
         try:
             full_response = ""
             for chunk in stream_llm(messages):

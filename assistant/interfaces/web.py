@@ -18,6 +18,7 @@ import assistant.tools.web    # noqa: F401
 import assistant.tools.memory_tool  # noqa: F401
 import assistant.tools.utils  # noqa: F401
 import assistant.tools.tasks  # noqa: F401
+import assistant.tools.obsidian  # noqa: F401
 
 app = FastAPI(title="Asistente IA Web")
 

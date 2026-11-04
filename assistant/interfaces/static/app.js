@@ -1,3 +1,10 @@
+// --- SEGURIDAD: Configurar la llave maestra ---
+const MASTER_KEY = "mango-secreto-123"; 
+const fetchHeaders = {
+    "Content-Type": "application/json",
+    "X-Master-Key": MASTER_KEY
+};
+
 // Configurar marked
 if (typeof marked !== 'undefined') {
     marked.setOptions({
@@ -104,7 +111,12 @@ fileInput.addEventListener('change', async () => {
     formData.append('file', file);
     addMessage('user', `Subiendo archivo: ${file.name}...`);
     try {
-        const res = await fetch('/upload', { method: 'POST', body: formData });
+        // Para upload solo enviamos la llave en el header (sin Content-Type)
+        const res = await fetch('/upload', { 
+            method: 'POST', 
+            body: formData,
+            headers: { 'X-Master-Key': MASTER_KEY }
+        });
         const data = await res.json();
         if (res.ok) addMessage('assistant', `He guardado el archivo **${data.filename}** en el workspace. ¿Qué quieres que haga con él?`, true);
         else addMessage('assistant', 'Error al subir el archivo.');
@@ -117,7 +129,7 @@ fileInput.addEventListener('change', async () => {
 // --- Historial, Enter y Envío ---
 async function loadHistory() {
     try {
-        const res = await fetch('/history');
+        const res = await fetch('/history', { headers: fetchHeaders });
         const data = await res.json();
         chatContainer.innerHTML = '';
         if (data.messages.length === 0) {
@@ -158,7 +170,7 @@ chatForm.addEventListener('submit', async (e) => {
     try {
         const response = await fetch('/chat/stream', {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers: fetchHeaders,
             body: JSON.stringify({ message: message, model: modelSelector.value })
         });
 
@@ -201,24 +213,16 @@ chatForm.addEventListener('submit', async (e) => {
     }
 });
 
-// --- Botón de Nueva Conversación (CORREGIDO) ---
 newChatBtn.addEventListener('click', async (e) => {
-    e.preventDefault(); // Evita recargas accidentales
+    e.preventDefault();
     try {
-        // Enviamos la petición al backend
-        await fetch('/clear', { method: 'POST' });
-        
-        // Limpiamos la interfaz SIEMPRE, pase lo que pase
+        await fetch('/clear', { method: 'POST', headers: fetchHeaders });
         chatContainer.innerHTML = '';
-        
-        // Mostramos el mensaje de bienvenida de nuevo
         addMessage('assistant', '¡Historial borrado! ¿De qué quieres hablar ahora?', true);
-        
     } catch (e) {
         console.error("Error al borrar:", e);
-        // Si falla el backend, limpiamos igual para que no se quede colgado
         chatContainer.innerHTML = '';
-        addMessage('assistant', '¡Interfaz reiniciada! (Hubo un problema al borrar la memoria en el servidor)', true);
+        addMessage('assistant', '¡Interfaz reiniciada!', true);
     }
 });
 

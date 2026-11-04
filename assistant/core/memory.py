@@ -49,6 +49,29 @@ def init_db() -> None:
             CREATE INDEX IF NOT EXISTS idx_usage_ts ON usage(ts);
             """
         )
+        # Creamos la tabla virtual FTS5 para búsqueda rápida de hechos
+        # Si ya existe, lanzará un error de "ya existe", lo ignoramos.
+        try:
+            conn.execute("""
+                CREATE VIRTUAL TABLE IF NOT EXISTS facts_fts USING fts5(
+                    key, value, content='facts', content_rowid='id'
+                );
+            """)
+            # Triggers para mantener el índice FTS5 sincronizado con la tabla 'facts'
+            conn.executescript("""
+                CREATE TRIGGER IF NOT EXISTS facts_ai AFTER INSERT ON facts BEGIN
+                    INSERT INTO facts_fts(rowid, key, value) VALUES (new.id, new.key, new.value);
+                END;
+                CREATE TRIGGER IF NOT EXISTS facts_ad AFTER DELETE ON facts BEGIN
+                    INSERT INTO facts_fts(facts_fts, rowid, key, value) VALUES('delete', old.id, old.key, old.value);
+                END;
+                CREATE TRIGGER IF NOT EXISTS facts_au AFTER UPDATE ON facts BEGIN
+                    INSERT INTO facts_fts(facts_fts, rowid, key, value) VALUES('delete', old.id, old.key, old.value);
+                    INSERT INTO facts_fts(rowid, key, value) VALUES (new.id, new.key, new.value);
+                END;
+            """)
+        except sqlite3.OperationalError:
+            pass # Si ya existen los triggers, no hacemos nada
 
 
 def estimate_tokens(text: str) -> int:
@@ -107,6 +130,26 @@ class LongTermMemory:
             rows = conn.execute("SELECT key, value FROM facts").fetchall()
         return {r["key"]: r["value"] for r in rows}
 
+    def search_facts(self, query: str, limit: int = 5) -> dict[str, str]:
+        """Busca hechos relevantes usando FTS5."""
+        # Limpiamos la query para evitar errores de sintaxis en FTS5
+        safe_query = "".join(c for c in query if c.isalnum() or c.isspace())
+        if not safe_query.strip():
+            return {}
+        
+        with _connect() as conn:
+            try:
+                # Buscamos en la tabla virtual
+                rows = conn.execute(
+                    "SELECT key, value FROM facts_fts WHERE facts_fts MATCH ? LIMIT ?",
+                    (safe_query, limit)
+                ).fetchall()
+                return {r["key"]: r["value"] for r in rows}
+            except sqlite3.OperationalError:
+                # Si FTS falla (por sintaxis), devolvemos los últimos 5 por seguridad
+                rows = conn.execute("SELECT key, value FROM facts LIMIT 5").fetchall()
+                return {r["key"]: r["value"] for r in rows}
+
     def delete_fact(self, key: str) -> bool:
         """Borra un hecho. True si existía."""
         with _connect() as conn:
@@ -157,7 +200,6 @@ def build_context(
     facts_str = "\n".join(f"- {k}: {v}" for k, v in facts.items()) or "(sin hechos)"
     system_content = f"{system_prompt}\n\nHechos conocidos:\n{facts_str}"
 
-    # Recorta desde el principio del historial hasta caber en max_tokens
     kept: list[dict] = []
     total = estimate_tokens(system_content)
     for msg in reversed(history):
@@ -169,24 +211,3 @@ def build_context(
     kept.reverse()
 
     return [{"role": "system", "content": system_content}, *kept]
-
-
-if __name__ == "__main__":
-    init_db()
-    stm = ShortTermMemory()
-    ltm = LongTermMemory()
-    tc = TokenCounter()
-
-    stm.clear()
-    stm.add("user", "hola")
-    stm.add("assistant", "buenas")
-    stm.add("user", "¿qué tal?")
-    print(stm.get_context())
-
-    ltm.set_fact("nombre", "Rafael")
-    print(ltm.get_fact("nombre"))
-
-    tc.log(provider="groq", model="llama-3.3-70b-versatile", tokens=100)
-    print(tc.daily_total())
-
-    print("OK memory")
