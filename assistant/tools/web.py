@@ -1,127 +1,84 @@
-"""Servidor web local (FastAPI) para el asistente."""
+"""Tools web: HTTP GET y búsqueda con ddgs (sin API key)."""
 from __future__ import annotations
 
-import os
-from pathlib import Path
-import shutil
+import json
+import urllib.error
+import urllib.request
 
-from fastapi import FastAPI, File, UploadFile, Request, HTTPException, Depends
-from fastapi.responses import FileResponse, StreamingResponse
-from fastapi.middleware.cors import CORSMiddleware
-from fastapi.staticfiles import StaticFiles
-from pydantic import BaseModel
+from assistant.tools.registry import tool
 
-from assistant.config import DATA_DIR
+USER_AGENT = "Mozilla/5.0 (X11; Linux x86_64) AsistentePersonal/0.1"
+HTTP_TIMEOUT = 15
+MAX_BODY_CHARS = 20_000
 
-from assistant.core.memory import ShortTermMemory, init_db
 
-import assistant.tools.files  # noqa: F401
-import assistant.tools.shell  # noqa: F401
-import assistant.tools.web    # noqa: F401
-import assistant.tools.memory_tool  # noqa: F401
-import assistant.tools.utils  # noqa: F401
-import assistant.tools.tasks  # noqa: F401
+def _http_get(url: str, accept: str = "*/*") -> tuple[int, str, str]:
+    """GET simple. Devuelve (status, content_type, body)."""
+    req = urllib.request.Request(url, headers={
+        "User-Agent": USER_AGENT,
+        "Accept": accept,
+    })
+    with urllib.request.urlopen(req, timeout=HTTP_TIMEOUT) as resp:
+        content_type = resp.headers.get("Content-Type", "")
+        raw = resp.read()
+        try:
+            body = raw.decode("utf-8", errors="replace")
+        except Exception:
+            body = raw.decode("latin-1", errors="replace")
+        return resp.status, content_type, body
 
-app = FastAPI(title="Asistente IA Web")
 
-# --- SEGURIDAD: CORS (Solo acepta tu navegador local) ---
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["http://localhost:8000", "http://127.0.0.1:8000"],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
+@tool(description="Descarga una URL y devuelve el contenido (texto o HTML truncado)")
+def http_get(url: str) -> str:
+    """GET de una URL. Devuelve status + content-type + body."""
+    if not url.startswith(("http://", "https://")):
+        return "Error: la URL debe empezar con http:// o https://"
 
-# --- SEGURIDAD: Middleware de caché ---
-@app.middleware("http")
-async def add_no_cache_header(request, call_next):
-    response = await call_next(request)
-    response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
-    response.headers["Pragma"] = "no-cache"
-    response.headers["Expires"] = "0"
-    return response
-
-# --- SEGURIDAD: Llave de acceso ---
-MASTER_KEY = os.getenv("MASTER_KEY", "mango-secreto-123")
-
-def verify_key(request: Request):
-    """Verifica que la petición incluya la llave secreta."""
-    # En el navegador, la llave se enviará en la cookie o en el header
-    key = request.headers.get("X-Master-Key") or request.cookies.get("master_key")
-    if key != MASTER_KEY:
-        raise HTTPException(status_code=401, detail="Llave de acceso incorrecta")
-    return True
-
-STATIC_DIR = Path(__file__).parent / "static"
-init_db()
-
-class ChatRequest(BaseModel):
-    message: str
-    model: str = "groq"
-
-class ChatResponse(BaseModel):
-    reply: str
-
-@app.post("/chat", response_model=ChatResponse, dependencies=[Depends(verify_key)])
-async def chat_endpoint(req: ChatRequest):
-    agent = get_agent()
     try:
-        reply = agent.run(req.message)
-        return ChatResponse(reply=reply)
+        status, content_type, body = _http_get(url)
+    except urllib.error.HTTPError as e:
+        return f"Error HTTP {e.code}: {e.reason}"
+    except urllib.error.URLError as e:
+        return f"Error de red: {e.reason}"
+    except TimeoutError:
+        return f"Error: timeout de {HTTP_TIMEOUT}s"
     except Exception as e:
-        return ChatResponse(reply=f"Error interno: {type(e).__name__}: {e}")
+        return f"Error: {type(e).__name__}: {e}"
 
-@app.post("/chat/stream", dependencies=[Depends(verify_key)])
-async def chat_stream_endpoint(req: ChatRequest):
-    agent = get_agent()
-    return StreamingResponse(agent.run_stream(req.message), media_type="text/event-stream")
+    if len(body) > MAX_BODY_CHARS:
+        body = body[:MAX_BODY_CHARS] + f"\n... (truncado, {len(body)} chars totales)"
 
-@app.post("/upload", dependencies=[Depends(verify_key)])
-async def upload_file(file: UploadFile = File(...)):
-    # SEGURIDAD: Limitar el tamaño del archivo a 10 MB
-    MAX_SIZE = 10 * 1024 * 1024
-    file.file.seek(0, 2)
-    size = file.file.tell()
-    file.file.seek(0)
-    if size > MAX_SIZE:
-        return {"status": "error", "message": "El archivo supera el límite de 10 MB."}
+    return f"[status {status}] [content-type {content_type}]\n{body}"
 
-    workspace = DATA_DIR / "workspace"
-    workspace.mkdir(parents=True, exist_ok=True)
-    safe_filename = Path(file.filename).name
-    file_path = workspace / safe_filename
+
+@tool(description="Busca en la web y devuelve los primeros resultados (título, URL, snippet)")
+def web_search(query: str, max_results: int = 5) -> str:
+    """Busca usando la librería ddgs (metasearch, sin API key)."""
+    if not query.strip():
+        return "Error: query vacía"
+
+    max_results = max(1, min(int(max_results), 10))
+
     try:
-        with file_path.open("wb") as buffer:
-            shutil.copyfileobj(file.file, buffer)
-        return {"filename": safe_filename, "status": "ok", "message": f"Archivo guardado como '{safe_filename}'."}
+        from ddgs import DDGS
+    except ImportError:
+        return "Error: falta instalar la librería. Ejecuta: pip install ddgs"
+
+    try:
+        with DDGS() as ddgs:
+            raw = list(ddgs.text(query, max_results=max_results))
     except Exception as e:
-        return {"status": "error", "message": f"No se pudo guardar: {e}"}
+        return f"Error en búsqueda: {type(e).__name__}: {e}"
 
-@app.get("/history", dependencies=[Depends(verify_key)])
-async def get_history():
-    stm = ShortTermMemory()
-    return {"messages": stm.get_context(limit=50)}
+    if not raw:
+        return "(sin resultados)"
 
-@app.post("/clear", dependencies=[Depends(verify_key)])
-async def clear_history():
-    stm = ShortTermMemory()
-    stm.clear()
-    return {"status": "ok"}
-
-# Servir archivos estáticos (sin protección para que cargue el HTML)
-@app.get("/")
-async def serve_index():
-    return FileResponse(STATIC_DIR / "index.html")
-
-@app.get("/style.css")
-async def serve_css():
-    return FileResponse(STATIC_DIR / "style.css")
-
-@app.get("/app.js")
-async def serve_js():
-    return FileResponse(STATIC_DIR / "app.js")
-
-if __name__ == "__main__":
-    import uvicorn
-    uvicorn.run(app, host="127.0.0.1", port=8000)
+    results = [
+        {
+            "title": r.get("title", ""),
+            "url": r.get("href", "") or r.get("url", ""),
+            "snippet": r.get("body", ""),
+        }
+        for r in raw
+    ]
+    return json.dumps(results, indent=2, ensure_ascii=False)
