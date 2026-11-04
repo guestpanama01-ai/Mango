@@ -7,7 +7,7 @@ from assistant.config import MAX_ITERATIONS
 from assistant.core.memory import (
     LongTermMemory, ShortTermMemory, TokenCounter, build_context, init_db,
 )
-from assistant.core.router import call_llm, stream_llm
+from assistant.core.router import call_llm, stream_llm, detect_task_type
 from assistant.tools import registry
 
 import assistant.tools.files  # noqa: F401
@@ -42,7 +42,11 @@ class Agent:
     def _log_result(self, result: dict) -> None:
         total = result.get("tokens_in", 0) + result.get("tokens_out", 0)
         if total > 0:
-            self.tc.log(provider=result.get("provider", "unknown"), model=result.get("model", "unknown"), tokens=total)
+            self.tc.log(
+                provider=result.get("provider", "unknown"), 
+                model=result.get("model", "unknown"), 
+                tokens=total
+            )
 
     def run(self, user_message: str) -> str:
         user_message = user_message.strip()
@@ -51,10 +55,13 @@ class Agent:
         self.stm.add("user", user_message)
         schemas = registry.list_schemas()
         messages = self._build_messages(user_message)
+        
+        # Detectar el tipo de tarea para el Router Inteligente
+        task_type = detect_task_type(user_message)
 
         for iteration in range(MAX_ITERATIONS):
             try:
-                result = call_llm(messages, tools=schemas, task_type="chat")
+                result = call_llm(messages, tools=schemas, task_type=task_type)
             except Exception as e:
                 return f"Error llamando al LLM: {type(e).__name__}: {e}"
 
@@ -68,6 +75,7 @@ class Agent:
 
             if text:
                 messages.append({"role": "assistant", "content": text})
+                self.stm.add("assistant", text)
             
             for tc in tool_calls:
                 name, args = tc["name"], tc["args"]
@@ -75,8 +83,9 @@ class Agent:
                 
                 tool_message = f"[RESULTADO DE {name}]\n{tool_result}"
                 messages.append({"role": "user", "content": tool_message})
+                self.stm.add("user", tool_message)
 
-        return f"(límite de iteraciones alcanzado)"
+        return f"(límite de {MAX_ITERATIONS} iteraciones alcanzado)"
 
     def run_stream(self, user_message: str):
         """Streaming optimizado: 1 sola llamada si no hay tools."""
@@ -88,10 +97,11 @@ class Agent:
         self.stm.add("user", user_message)
         schemas = registry.list_schemas()
         messages = self._build_messages(user_message)
+        task_type = detect_task_type(user_message)
         
         # 1. Hacemos la llamada normal (necesitamos saber si el modelo quiere usar una tool)
         try:
-            check_result = call_llm(messages, tools=schemas, task_type="chat")
+            check_result = call_llm(messages, tools=schemas, task_type=task_type)
             self._log_result(check_result)
             
             if check_result.get("tool_calls"):
@@ -103,14 +113,14 @@ class Agent:
                     
                     tool_message = f"[RESULTADO DE {name}]\n{tool_result}"
                     messages.append({"role": "user", "content": tool_message})
+                    self.stm.add("user", tool_message)
                     
                     yield "\n"
                     for chunk in stream_llm(messages):
                         yield chunk
                 return
             
-            # 2. Si el modelo NO usó tools, entonces el texto que ya generó es la respuesta.
-            # Lo devolvemos palabra por palabra simulando el streaming para no gastar otra llamada.
+            # 2. Si el modelo NO usó tools, devolvemos el texto palabra por palabra
             text_response = check_result.get("text", "")
             if text_response:
                 for word in text_response.split(" "):

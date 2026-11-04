@@ -2,11 +2,31 @@
 from __future__ import annotations
 
 import json
+import time
+import re
 from typing import Optional, Generator
 
 from assistant.config import MODELS, get_api_key, get_model
 
+# ---------------------------------------------------------------------------
+# Clasificador simple de tareas (Router Inteligente)
+# ---------------------------------------------------------------------------
+def detect_task_type(message: str) -> str:
+    """Analiza el texto para decidir si es código, razonamiento o chat normal."""
+    code_keywords = ["def ", "class ", "import ", "function", "código", "script", "```"]
+    reasoning_keywords = ["razona", "explica", "por qué", "analiza", "compara", "lógica"]
+    
+    msg_lower = message.lower()
+    
+    if any(kw in message for kw in code_keywords):
+        return "code"
+    if any(kw in msg_lower for kw in reasoning_keywords):
+        return "reasoning"
+    return "chat"
 
+# ---------------------------------------------------------------------------
+# Funciones auxiliares
+# ---------------------------------------------------------------------------
 def _tools_anthropic(schemas: list[dict]) -> list[dict]:
     return schemas
 
@@ -33,7 +53,9 @@ def _tools_gemini(schemas: list[dict]) -> list[dict]:
         })
     return out
 
-
+# ---------------------------------------------------------------------------
+# Llamadas por proveedor
+# ---------------------------------------------------------------------------
 def _call_anthropic(model: str, messages: list[dict], tools: list[dict]) -> dict:
     from anthropic import Anthropic
     client = Anthropic(api_key=get_api_key("claude"))
@@ -116,25 +138,40 @@ def _call_gemini(model: str, messages: list[dict], tools: list[dict]) -> dict:
 
 _CALLERS = {"anthropic": _call_anthropic, "groq": _call_groq, "gemini": _call_gemini}
 
+# ---------------------------------------------------------------------------
+# API pública
+# ---------------------------------------------------------------------------
 def call_llm(messages: list[dict], tools: Optional[list[dict]] = None, task_type: str = "chat") -> dict:
     tools = tools or []
-    if task_type in {"code", "reasoning", "long"}:
-        order = ["groq", "gemini"]
+    
+    # Router: Si es código o razonamiento, prefiere Gemini (o el que tengas), si es chat, Groq
+    if task_type in {"code", "reasoning"}:
+        order = ["gemini", "groq"]
     else:
         order = ["groq", "gemini"]
+
     available = [a for a in order if get_api_key(a)]
     if not available:
         raise RuntimeError("No hay ningún proveedor con API key. Configura .env.")
+
     last_error: Optional[Exception] = None
+    
     for alias in available:
         provider = MODELS[alias]["provider"]
         model = MODELS[alias]["model"]
         caller = _CALLERS[provider]
-        try:
-            return caller(model, messages, tools)
-        except Exception as e:
-            last_error = e
-            continue
+
+        # Reintentos con Backoff (3 intentos)
+        for attempt in range(3):
+            try:
+                return caller(model, messages, tools)
+            except Exception as e:
+                last_error = e
+                if "429" in str(e) or "rate limit" in str(e).lower():
+                    time.sleep(2 ** attempt) # Espera 1s, 2s, 4s
+                else:
+                    break # Si no es error de límite, pasa al siguiente proveedor
+
     raise RuntimeError(f"Todos los proveedores fallaron. Último error: {type(last_error).__name__}: {last_error}")
 
 def stream_llm(messages: list[dict], tools: Optional[list[dict]] = None) -> Generator[str, None, None]:
