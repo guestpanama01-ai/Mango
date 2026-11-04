@@ -8,8 +8,41 @@
     <meta name="theme-color" content="#7c5cff">
     <link rel="stylesheet" href="style.css">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github-dark.min.css" id="hljs-theme">
+    <style>
+        /* Estilos rápidos para el login */
+        #login-overlay {
+            position: fixed; inset: 0; background: rgba(11, 11, 26, 0.9);
+            display: flex; align-items: center; justify-content: center;
+            z-index: 9999; backdrop-filter: blur(10px);
+        }
+        .login-box {
+            background: var(--glass-bg-strong); padding: 30px; border-radius: 20px;
+            border: 1px solid var(--glass-border); text-align: center;
+            box-shadow: var(--shadow); width: 300px;
+        }
+        .login-box input {
+            width: 100%; padding: 12px; margin: 15px 0; border-radius: 10px;
+            border: 1px solid var(--glass-border); background: rgba(0,0,0,0.3);
+            color: white; text-align: center; font-size: 1rem;
+        }
+        .login-box button {
+            width: 100%; padding: 12px; border-radius: 10px; border: none;
+            background: linear-gradient(135deg, var(--accent-1), var(--accent-2));
+            color: white; font-weight: bold; cursor: pointer;
+        }
+    </style>
 </head>
 <body>
+    <!-- Pantalla de Login -->
+    <div id="login-overlay">
+        <div class="login-box">
+            <h2>Acceso Restringido</h2>
+            <p style="color: var(--text-dim); font-size: 0.9rem;">Ingresa tu llave maestra para usar a Mango.</p>
+            <input type="password" id="master-key-input" placeholder="Llave Maestra...">
+            <button onclick="saveKey()">Entrar</button>
+        </div>
+    </div>
+
     <div class="app-wrapper">
         <header class="app-header">
             <div class="logo-area">
@@ -96,10 +129,5 @@
     <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
     <script src="app.js"></script>
-    <script>
-        if ('serviceWorker' in navigator) {
-            navigator.serviceWorker.register('sw.js');
-        }
-    </script>
 </body>
 </html>

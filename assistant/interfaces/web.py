@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import os
+import secrets
 from pathlib import Path
 import shutil
 
@@ -24,10 +25,12 @@ import assistant.tools.obsidian  # noqa: F401
 
 app = FastAPI(title="Asistente IA Web")
 
-# Permitir peticiones desde GitHub Pages y localhost
+# --- SEGURIDAD: CORS ---
+# Permitimos peticiones desde cualquier origen para que GitHub Pages o Render funcionen.
+# La seguridad real la da la MASTER_KEY.
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"], # En producción, cambia "*" por tu URL de GitHub Pages si quieres más seguridad
+    allow_origins=["*"], 
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -41,12 +44,15 @@ async def add_no_cache_header(request, call_next):
     response.headers["Expires"] = "0"
     return response
 
+# --- SEGURIDAD: Llave Maestra ---
+# Si no hay variable en el entorno, usamos una por defecto, pero en Render DEBES tener una.
 MASTER_KEY = os.getenv("MASTER_KEY", "mango-secreto-123")
 
 def verify_key(request: Request):
-    key = request.headers.get("X-Master-Key")
-    if key != MASTER_KEY:
-        raise HTTPException(status_code=401, detail="Llave incorrecta")
+    key = request.headers.get("X-Master-Key", "")
+    # Comparación segura contra timing attacks
+    if not secrets.compare_digest(key, MASTER_KEY):
+        raise HTTPException(status_code=401, detail="Llave de acceso incorrecta")
 
 STATIC_DIR = Path(__file__).parent / "static"
 init_db()
@@ -100,7 +106,7 @@ async def clear_history():
     ShortTermMemory().clear()
     return {"status": "ok"}
 
-# Rutas estáticas
+# --- RUTAS ESTÁTICAS ---
 @app.get("/")
 async def serve_index():
     return FileResponse(STATIC_DIR / "index.html")
