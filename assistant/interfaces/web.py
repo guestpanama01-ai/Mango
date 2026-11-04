@@ -27,7 +27,7 @@ app = FastAPI(title="Asistente IA Web")
 # Permitir peticiones desde GitHub Pages y localhost
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"], # En producción, cambia "*" por tu URL de GitHub Pages
+    allow_origins=["*"], # En producción, cambia "*" por tu URL de GitHub Pages si quieres más seguridad
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

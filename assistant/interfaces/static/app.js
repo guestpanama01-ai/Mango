@@ -1,13 +1,15 @@
 // --- CONFIGURACIÓN PARA HOSTING ---
-// Si estás en local, deja "". Si estás en Render, pon la URL: "https://tu-app.onrender.com"
-const API_BASE = ""; 
+const API_BASE = "https://mango-nvn4.onrender.com"; 
 
+// --- SEGURIDAD: Configurar la llave maestra ---
+// Debe coincidir con el MASTER_KEY de Render
 const MASTER_KEY = "mango-secreto-123"; 
 const fetchHeaders = {
     "Content-Type": "application/json",
     "X-Master-Key": MASTER_KEY
 };
 
+// Configurar marked
 if (typeof marked !== 'undefined') {
     marked.setOptions({
         breaks: true,
@@ -32,6 +34,7 @@ const hljsTheme = document.getElementById('hljs-theme');
 const micBtn = document.getElementById('mic-btn');
 const ttsToggle = document.getElementById('tts-toggle');
 
+// --- Variables de Voz ---
 let isListening = false;
 let ttsEnabled = false;
 let recognition = null;
@@ -93,6 +96,7 @@ function speakText(text) {
     window.speechSynthesis.speak(utterance);
 }
 
+// --- Lógica del Tema ---
 themeToggle.addEventListener('click', () => {
     document.body.classList.toggle('light-theme');
     if (document.body.classList.contains('light-theme')) {
@@ -102,6 +106,7 @@ themeToggle.addEventListener('click', () => {
     }
 });
 
+// --- Lógica de Subir Archivo ---
 uploadBtn.addEventListener('click', () => fileInput.click());
 fileInput.addEventListener('change', async () => {
     if (!fileInput.files.length) return;
@@ -124,6 +129,7 @@ fileInput.addEventListener('change', async () => {
     fileInput.value = '';
 });
 
+// --- Historial, Enter y Envío ---
 async function loadHistory() {
     try {
         const res = await fetch(API_BASE + '/history', { headers: fetchHeaders });
@@ -222,6 +228,7 @@ newChatBtn.addEventListener('click', async (e) => {
     }
 });
 
+// --- Funciones de UI ---
 function addMessage(role, text, isMarkdown = false) {
     const msgDiv = document.createElement('div');
     msgDiv.className = `msg ${role}`;
@@ -300,4 +307,5 @@ function setStatus(state) {
     }
 }
 
+// Arrancar
 loadHistory();
