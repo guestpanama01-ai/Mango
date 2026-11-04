@@ -1,7 +1,11 @@
-anthropic
+fastapi
+uvicorn
+python-multipart
+python-dotenv
 groq
 google-generativeai
+anthropic
 pydantic
-python-dotenv
+libsql
 rich
 ddgs

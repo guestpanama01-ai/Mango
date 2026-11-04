@@ -1,11 +1,13 @@
-// --- SEGURIDAD: Configurar la llave maestra ---
+// --- CONFIGURACIÓN PARA HOSTING ---
+// Si estás en local, deja "". Si estás en Render, pon la URL: "https://tu-app.onrender.com"
+const API_BASE = ""; 
+
 const MASTER_KEY = "mango-secreto-123"; 
 const fetchHeaders = {
     "Content-Type": "application/json",
     "X-Master-Key": MASTER_KEY
 };
 
-// Configurar marked
 if (typeof marked !== 'undefined') {
     marked.setOptions({
         breaks: true,
@@ -30,7 +32,6 @@ const hljsTheme = document.getElementById('hljs-theme');
 const micBtn = document.getElementById('mic-btn');
 const ttsToggle = document.getElementById('tts-toggle');
 
-// --- Variables de Voz ---
 let isListening = false;
 let ttsEnabled = false;
 let recognition = null;
@@ -92,7 +93,6 @@ function speakText(text) {
     window.speechSynthesis.speak(utterance);
 }
 
-// --- Lógica del Tema ---
 themeToggle.addEventListener('click', () => {
     document.body.classList.toggle('light-theme');
     if (document.body.classList.contains('light-theme')) {
@@ -102,7 +102,6 @@ themeToggle.addEventListener('click', () => {
     }
 });
 
-// --- Lógica de Subir Archivo ---
 uploadBtn.addEventListener('click', () => fileInput.click());
 fileInput.addEventListener('change', async () => {
     if (!fileInput.files.length) return;
@@ -111,29 +110,27 @@ fileInput.addEventListener('change', async () => {
     formData.append('file', file);
     addMessage('user', `Subiendo archivo: ${file.name}...`);
     try {
-        // Para upload solo enviamos la llave en el header (sin Content-Type)
-        const res = await fetch('/upload', { 
+        const res = await fetch(API_BASE + '/upload', { 
             method: 'POST', 
             body: formData,
             headers: { 'X-Master-Key': MASTER_KEY }
         });
         const data = await res.json();
-        if (res.ok) addMessage('assistant', `He guardado el archivo **${data.filename}** en el workspace. ¿Qué quieres que haga con él?`, true);
+        if (res.ok) addMessage('assistant', `He guardado el archivo **${data.filename}**. ¿Qué hacemos con él?`, true);
         else addMessage('assistant', 'Error al subir el archivo.');
     } catch (e) {
-        addMessage('assistant', 'Error de conexión al subir el archivo.');
+        addMessage('assistant', 'Error de conexión al subir.');
     }
     fileInput.value = '';
 });
 
-// --- Historial, Enter y Envío ---
 async function loadHistory() {
     try {
-        const res = await fetch('/history', { headers: fetchHeaders });
+        const res = await fetch(API_BASE + '/history', { headers: fetchHeaders });
         const data = await res.json();
         chatContainer.innerHTML = '';
         if (data.messages.length === 0) {
-            addMessage('assistant', '¡Hola! Soy tu asistente. ¿En qué puedo ayudarte hoy?', true);
+            addMessage('assistant', '¡Hola! Soy Mango. ¿En qué puedo ayudarte hoy?', true);
             return;
         }
         data.messages.forEach(msg => {
@@ -168,7 +165,7 @@ chatForm.addEventListener('submit', async (e) => {
     setStatus('thinking');
 
     try {
-        const response = await fetch('/chat/stream', {
+        const response = await fetch(API_BASE + '/chat/stream', {
             method: 'POST',
             headers: fetchHeaders,
             body: JSON.stringify({ message: message, model: modelSelector.value })
@@ -216,17 +213,15 @@ chatForm.addEventListener('submit', async (e) => {
 newChatBtn.addEventListener('click', async (e) => {
     e.preventDefault();
     try {
-        await fetch('/clear', { method: 'POST', headers: fetchHeaders });
+        await fetch(API_BASE + '/clear', { method: 'POST', headers: fetchHeaders });
         chatContainer.innerHTML = '';
-        addMessage('assistant', '¡Historial borrado! ¿De qué quieres hablar ahora?', true);
+        addMessage('assistant', '¡Historial borrado! ¿De qué hablamos?', true);
     } catch (e) {
-        console.error("Error al borrar:", e);
         chatContainer.innerHTML = '';
         addMessage('assistant', '¡Interfaz reiniciada!', true);
     }
 });
 
-// --- Funciones de UI ---
 function addMessage(role, text, isMarkdown = false) {
     const msgDiv = document.createElement('div');
     msgDiv.className = `msg ${role}`;
@@ -305,5 +300,4 @@ function setStatus(state) {
     }
 }
 
-// Arrancar
 loadHistory();
